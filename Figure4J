@@ -1,0 +1,107 @@
+#Calculate the expression levels of genes at six layers among different brain regions.
+library(dplyr)
+library(ggplot2)
+library(Seurat)
+library(pheatmap)
+
+#1、Extract the normalized expression values of the specified gene in the whole brain cells.
+spa_matrix_dir="/home/share/share_baiyq/spa_matrix_1104"  #Path to Seurat object of spatial transcriptome
+filenames=dir(spa_matrix_dir,"spa_matrix.*.rds")
+filenames=paste0(spa_matrix_dir,filenames)
+length(filenames)
+slide_names=sapply(filenames,function(x) unlist(strsplit(x,"[.]"))[2])
+slide_names=slide_names[!(slide_names %in% c("T573","T145"))]
+length(slide_names)
+slide_names=slide_names %>% sort 
+slide_names
+
+args<-commandArgs(TRUE)
+gene=args[1] #GAD1
+
+print(gene)
+out_counts=c()
+out_data=c()
+for(i in 1:length(slide_names)){
+slide=slide_names[i]
+print(slide)
+file_name=names(slide)
+print(file_name)
+seurat=readRDS(file_name)
+if(gene %in% rownames(seurat)){
+expr=seurat@assays$SCT@data[gene,]
+expr=as.data.frame(expr) 
+expr$CellID=paste0(slide,"_",rownames(expr))
+out_data=rbind(out_data,expr)
+expr=NULL
+seurat=NULL
+}
+}
+dim(out_data)
+colnames(out_data)=c("expr","CellID")
+saveRDS(out_data,file=paste0("./NM_NT/ST.seurat.SCT.data.",gene,".rds"))
+
+
+#2、Plot: Pheatmap
+library(dplyr)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+hierarchy_Info=read.csv("/home/mengjuan/project/ST/Work3/3.merge_snRNA/271clusters/266clusters/264clusters/hierarchy/cortical.levels.txt",header=TRUE,sep="\t")
+dim(hierarchy_Info)
+title="SomatosentorySystem" # SomatosentorySystem VisualSystem
+color=readRDS("./hierarchy/color_SomatosentorySystem.rds")
+tmp_dat=hierarchy_Info[hierarchy_Info$X==title,]
+annotation_col=tmp_dat %>% select(Levels)
+rownames(annotation_col)=tmp_dat$area_name
+ann_colors=list(Levels=color)
+areas=tmp_dat$area_name
+areas
+genes=c('GRIA1', 'GRIA2', 'GRIA3', 'GRIA4',
+'GRIK1', 'GRIK2', 'GRIK3', 'GRIK4', 'GRIK5',
+'GRIN1', 'GRIN2A', 'GRIN2B', 'GRIN2C', 'GRIN2D', 'GRIN3A', 'GRIN3B',
+'GRID1','GRID2')
+#Subset glutamatergic neurons in Macaca#1
+metaInfo=readRDS("ST.TransferResult.MacacaV1.qc.rds") #file includes MetadataInfo of spatial transcriptome cells
+metaInfo$CellID=paste0(metaInfo$slide,"_",metaInfo$cell_id)
+rownames(metaInfo)=metaInfo$CellID
+dim(metaInfo)
+metaInfo=metaInfo[metaInfo$Class=="GLU",] 
+dim(metaInfo)
+metaInfo2=metaInfo[metaInfo$area %in% areas,]
+dim(metaInfo2)
+anno_dat=metaInfo2
+FeatureEach1=list()
+FeatureEach2=list()
+out_dat1=c()
+out_dat2=c()
+for(i in 1:length(genes)){
+gene=genes[i]
+print(gene)
+filename=paste0("./NM_NT/ST.seurat.SCT.data.",gene,".rds")
+print(filename)
+name=paste0("ST_sctdata_GLU.",title,".",gene)
+if(file.exists(filename)){
+gene_data=readRDS(filename)
+cells=intersect(gene_data$CellID,rownames(anno_dat)) #anno_dat 更小?
+length(cells) %>% print()
+if(length(cells) >0){
+tmp.dat=anno_dat[(rownames(anno_dat) %in% cells ),]
+tmp.dat$value=gene_data[(gene_data$CellID %in% cells),"expr"]
+data=reshape2::dcast(tmp.dat,layer~area,value.var="value",sum)
+rownames(data)=data$layer
+data$layer=NULL
+area_layer_counts=table(tmp.dat$layer,tmp.dat$area)
+diff_data=data/area_layer_counts[rownames(data),colnames(data)]
+diff_data[is.na(diff_data)]=0
+diff_data=diff_data[,which(apply(diff_data,2,sum)>0)]
+areas2=intersect(areas,colnames(diff_data))
+diff_data=diff_data[,areas2]
+heatmap_corbar=c("#053061","#2166AC","#4393C3","#92C5DE","#D1E5F0","#FDDBC7","#F4A582","#D6604D","#B2182B","#67001F")
+pdf(paste0("./result/",name,".pheatmap.pdf"),h=4,w=6)
+p1=pheatmap(diff_data,scale = "none",cluster_rows =F,cluster_cols = F,
+			show_rownames =T,show_colnames =T,
+			annotation_col=annotation_col,annotation_colors = ann_colors,main = gene,
+	       color = colorRampPalette(colors = heatmap_corbar)(297) )
+dev.off()
+}}
+}
