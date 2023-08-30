@@ -1,5 +1,3 @@
-#Transfer spatial transcriptome matrix into Seurat object
-
 suppressMessages(library(Matrix))
 suppressMessages(library(Seurat))
 suppressMessages(library(data.table))
